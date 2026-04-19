@@ -168,19 +168,44 @@ function normaliseGecko(geckoData:any[]):Token[]{
 app.get("/tokens", (req:Request ,res:Response)=>{
     try{
         let sort_By =req.query.sortBy as string ;
-        let sortedFeild;
+        let order = req.query.order;
+        if(!order || (order != "asc" && order!= "desc") ){
+            order="desc"
+        }
+        let sortedField;
+        const allowedSorts =["volume", "price", "marketCap", "priceChange"]
         let mapData={
             volume:"volume24h",
             price:"price",
             marketCap:"marketCap",
             priceChange:"priceChange24h"
         }
-        if(sort_By ==="volume" || sort_By==="price"|| sort_By==="marketCap"|| sort_By==="priceChange"){
-            let sortField=mapData[sort_By];
-            sortedFeild=latestToken[sortField]
-        }else{
+        if(!sort_By || !allowedSorts.includes(sort_By)){
             sort_By="volume"
         }
+        
+        let sortField=mapData[sort_By];
+        let sortToken=[...latestToken]
+        sortedField=sortToken.sort((tokenA, tokenB)=>{
+            let valueA=tokenA[sortField];
+            let valueB=tokenB[sortField];
+            if(valueA === null && valueB === null){
+                return 0;
+            }
+            if(valueA === null || valueA === undefined ){
+                return 1;
+            }
+            if(valueB === null || valueB === undefined){
+                return -1;
+            }
+            if(order === "asc"){
+                return valueA-valueB;
+            }else{
+                return valueB - valueA;
+            }
+
+        })
+    
         let raw_cursor= req.query.cursor as string || undefined;
         if(raw_cursor === undefined){
             raw_cursor="0";
@@ -190,7 +215,7 @@ app.get("/tokens", (req:Request ,res:Response)=>{
         if(isNaN(cursor) || cursor <0){
             cursor=0;
         }
-        if(cursor >= latestToken.length){
+        if(cursor >= sortedField.length){
             return res.send({
                 success:true,
                 count:0,
@@ -212,9 +237,9 @@ app.get("/tokens", (req:Request ,res:Response)=>{
             ParsedLimit=50;
         }
         
-        let limitedArray= latestToken.slice(cursor, cursor+ParsedLimit);
+        let limitedArray= sortedField.slice(cursor, cursor+ParsedLimit);
         let nextCursor = cursor + ParsedLimit ;
-        if(nextCursor >= latestToken.length){
+        if(nextCursor >= sortedField.length){
             nextCursor=null;
         }
         
