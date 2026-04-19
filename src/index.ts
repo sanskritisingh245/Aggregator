@@ -3,9 +3,8 @@ import cron from 'node-cron';
 import axios from "axios";
 
 import { Token } from "./types/token";
-import { success } from "zod";
-import { parsedType } from "zod/v4/core/util.cjs";
-import { stringify } from "node:querystring";
+import redis from "./redis";
+
 
 const app=express();
 app.use(express.json());
@@ -40,6 +39,56 @@ async function fetchDataWithRetry(url: string){
         } 
     }
     return null 
+}
+
+function normaliseDex(dexData: { pairs: any[] }):Token[]{
+    //let tokens=[];
+    return dexData.pairs.map((pair)=>{
+        return {
+            address:pair.baseToken.address,
+            name:pair.baseToken.name,
+            symbol:pair.baseToken.symbol,
+            price:pair.priceUsd || null,
+            volume24h:pair.volume?.h24 || null,
+            marketCap:null,
+            priceChange24h:null,
+            liquidity:pair.liquidity?.usd || null,
+            source:"dex"    
+        }
+    }) 
+}
+
+function normaliseJupiter(jupiterData:any[]):Token[]{
+    return jupiterData.map((token)=>{
+        return {
+            address:token.address,
+            name:token.name,
+            symbol:token.symbol,
+            price:null,
+            volume24h:token.daily_volume || null,
+            marketCap:null,
+            priceChange24h:null,
+            liquidity:null,
+            source:"jupiter"   
+
+        }
+    })
+}
+
+function normaliseGecko(geckoData:any[]):Token[]{
+    return geckoData.map((coin)=>{
+        return {
+            address:coin.id,
+            name:coin.name,
+            symbol:coin.symbol,
+            price:coin.current_price,
+            volume24h:coin.total_volume,
+            marketCap:coin.market_cap,
+            priceChange24h:coin.price_change_percentage_24h,
+            liquidity:null,
+            source:"coingecko" 
+        }
+    })  
 }
 
 cron.schedule('*/30 * * * * *',async()=>{
@@ -114,60 +163,27 @@ cron.schedule('*/30 * * * * *',async()=>{
     }
 })
 
-function normaliseDex(dexData: { pairs: any[] }):Token[]{
-    //let tokens=[];
-    return dexData.pairs.map((pair)=>{
-        return {
-            address:pair.baseToken.address,
-            name:pair.baseToken.name,
-            symbol:pair.baseToken.symbol,
-            price:pair.priceUsd || null,
-            volume24h:pair.volume?.h24 || null,
-            marketCap:null,
-            priceChange24h:null,
-            liquidity:pair.liquidity?.usd || null,
-            source:"dex"    
-        }
-    }) 
-}
-
-function normaliseJupiter(jupiterData:any[]):Token[]{
-    return jupiterData.map((token)=>{
-        return {
-            address:token.address,
-            name:token.name,
-            symbol:token.symbol,
-            price:null,
-            volume24h:token.daily_volume || null,
-            marketCap:null,
-            priceChange24h:null,
-            liquidity:null,
-            source:"jupiter"   
-
-        }
-    })
-}
-
-function normaliseGecko(geckoData:any[]):Token[]{
-    return geckoData.map((coin)=>{
-        return {
-            address:coin.id,
-            name:coin.name,
-            symbol:coin.symbol,
-            price:coin.current_price,
-            volume24h:coin.total_volume,
-            marketCap:coin.market_cap,
-            priceChange24h:coin.price_change_percentage_24h,
-            liquidity:null,
-            source:"coingecko" 
-        }
-    })  
-}
-
-
-app.get("/tokens", (req:Request ,res:Response)=>{
+app.get("/tokens",async  (req:Request ,res:Response)=>{
     try{
-        let sort_By =req.query.sortBy as string ;
+        let  limit=req.query.limit as string || undefined;
+        if(limit === undefined){
+           limit="20";
+        }
+        let ParsedLimit=parseInt(limit);
+        if( isNaN(ParsedLimit) || ParsedLimit <=0  ){
+            ParsedLimit= 20;
+        }
+
+        let raw_cursor= req.query.cursor as string || undefined;
+        if(raw_cursor === undefined){
+            raw_cursor="0";
+        }
+        let cursor= parseInt(raw_cursor);
+
+        if(isNaN(cursor) || cursor <0){
+            cursor=0;
+        }
+
         let order = req.query.order;
         if(!order || (order != "asc" && order!= "desc") ){
             order="desc"
@@ -180,15 +196,22 @@ app.get("/tokens", (req:Request ,res:Response)=>{
             marketCap:"marketCap",
             priceChange:"priceChange24h"
         }
+        let sort_By =req.query.sortBy as keyof typeof mapData;
         if(!sort_By || !allowedSorts.includes(sort_By)){
             sort_By="volume"
         }
         
-        let sortField=mapData[sort_By];
+        let cacheKey=`tokens:sort=${sort_By}:order=${order}:cursor=${cursor}:limit=${ParsedLimit}`;
+        const cachedData= await redis.get(cacheKey);
+        if(cachedData){
+            return res.status(200).json(JSON.parse(cachedData))
+        }
+
+        let sortField=mapData[sort_By] as keyof Token;
         let sortToken=[...latestToken]
         sortedField=sortToken.sort((tokenA, tokenB)=>{
-            let valueA=tokenA[sortField];
-            let valueB=tokenB[sortField];
+            let valueA=tokenA[sortField] as number;
+            let valueB=tokenB[sortField] as number;
             if(valueA === null && valueB === null){
                 return 0;
             }
@@ -205,16 +228,7 @@ app.get("/tokens", (req:Request ,res:Response)=>{
             }
 
         })
-    
-        let raw_cursor= req.query.cursor as string || undefined;
-        if(raw_cursor === undefined){
-            raw_cursor="0";
-        }
 
-        let cursor= parseInt(raw_cursor);
-        if(isNaN(cursor) || cursor <0){
-            cursor=0;
-        }
         if(cursor >= sortedField.length){
             return res.send({
                 success:true,
@@ -224,34 +238,28 @@ app.get("/tokens", (req:Request ,res:Response)=>{
             })
         }
 
-        let  limit=req.query.limit as string || undefined;
-        if(limit === undefined){
-           limit="20";
-        }
-        let ParsedLimit=parseInt(limit);
-        if( isNaN(ParsedLimit) || ParsedLimit <=0  ){
-            ParsedLimit= 20;
-        }
+        
 
         if(ParsedLimit >50){
             ParsedLimit=50;
         }
         
         let limitedArray= sortedField.slice(cursor, cursor+ParsedLimit);
-        let nextCursor = cursor + ParsedLimit ;
+        let nextCursor:number | null  = cursor + ParsedLimit ;
         if(nextCursor >= sortedField.length){
             nextCursor=null;
         }
         
         const count= limitedArray.length
-
-        return res.status(200).json({
+        const response ={
             success:true,
             count:count,
             limit:ParsedLimit,
             nextCursor:nextCursor,
             data:limitedArray
-        })
+        }
+        await redis.set(cacheKey, JSON.stringify(response), "EX", 30);
+        return res.status(200).json(response)
 
     }catch(e:any){
         return res.status(500).json({
