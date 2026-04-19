@@ -1,10 +1,17 @@
-import expres from "express";
+import express , {type Request  , type Response} from "express";
 import cron from 'node-cron';
 import axios from "axios";
 
 import { Token } from "./types/token";
-import { symbol } from "zod";
+import { success } from "zod";
+import { parsedType } from "zod/v4/core/util.cjs";
+import { stringify } from "node:querystring";
 
+const app=express();
+app.use(express.json());
+
+let  latestToken:Token[] =[];
+const max_attempt=5;
 
 const sleep = (delay: number) => {
     return new Promise((resolve)=> {
@@ -12,8 +19,6 @@ const sleep = (delay: number) => {
     })
 }
 
-
-const max_attempt=5;
 async function fetchDataWithRetry(url: string){
     let attempt=0;
     while(attempt < max_attempt){
@@ -36,12 +41,13 @@ async function fetchDataWithRetry(url: string){
     }
     return null 
 }
+
 cron.schedule('*/30 * * * * *',async()=>{
     try{
         const [dex, jupiter, gecko] = await Promise.allSettled ([
-            fetchDataWithRetry('https://api.dexscreener.com/latest/dex/tokens/{tokenAddress} or /latest/dex/search?q={query}'),
+            fetchDataWithRetry('https://api.dexscreener.com/latest/dex/search?q=SOL'),
             fetchDataWithRetry('https://lite-api.jup.ag/tokens/v2/search?query=SOL'),
-            fetchDataWithRetry('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd or https://api.coingecko.com/api/v3/coins/solana')
+            fetchDataWithRetry('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd')
         ]);
 
         let storage:  Record<string, Token> ={};
@@ -100,6 +106,8 @@ cron.schedule('*/30 * * * * *',async()=>{
             }
             
         })
+        latestToken=finalToken;
+        console.log(finalToken);
 
     }catch(err:any){
         console.log(err.message)
@@ -113,11 +121,11 @@ function normaliseDex(dexData: { pairs: any[] }):Token[]{
             address:pair.baseToken.address,
             name:pair.baseToken.name,
             symbol:pair.baseToken.symbol,
-            price:pair.priceUsd,
-            volume24h:pair.volume.h24,
+            price:pair.priceUsd || null,
+            volume24h:pair.volume?.h24 || null,
             marketCap:null,
             priceChange24h:null,
-            liquidity:pair.liquidity.usd,
+            liquidity:pair.liquidity?.usd || null,
             source:"dex"    
         }
     }) 
@@ -155,3 +163,78 @@ function normaliseGecko(geckoData:any[]):Token[]{
         }
     })  
 }
+
+
+app.get("/tokens", (req:Request ,res:Response)=>{
+    try{
+        let sort_By =req.query.sortBy as string ;
+        let sortedFeild;
+        let mapData={
+            volume:"volume24h",
+            price:"price",
+            marketCap:"marketCap",
+            priceChange:"priceChange24h"
+        }
+        if(sort_By ==="volume" || sort_By==="price"|| sort_By==="marketCap"|| sort_By==="priceChange"){
+            let sortField=mapData[sort_By];
+            sortedFeild=latestToken[sortField]
+        }else{
+            sort_By="volume"
+        }
+        let raw_cursor= req.query.cursor as string || undefined;
+        if(raw_cursor === undefined){
+            raw_cursor="0";
+        }
+
+        let cursor= parseInt(raw_cursor);
+        if(isNaN(cursor) || cursor <0){
+            cursor=0;
+        }
+        if(cursor >= latestToken.length){
+            return res.send({
+                success:true,
+                count:0,
+                data:[],
+                nextCursor:null
+            })
+        }
+
+        let  limit=req.query.limit as string || undefined;
+        if(limit === undefined){
+           limit="20";
+        }
+        let ParsedLimit=parseInt(limit);
+        if( isNaN(ParsedLimit) || ParsedLimit <=0  ){
+            ParsedLimit= 20;
+        }
+
+        if(ParsedLimit >50){
+            ParsedLimit=50;
+        }
+        
+        let limitedArray= latestToken.slice(cursor, cursor+ParsedLimit);
+        let nextCursor = cursor + ParsedLimit ;
+        if(nextCursor >= latestToken.length){
+            nextCursor=null;
+        }
+        
+        const count= limitedArray.length
+
+        return res.status(200).json({
+            success:true,
+            count:count,
+            limit:ParsedLimit,
+            nextCursor:nextCursor,
+            data:limitedArray
+        })
+
+    }catch(e:any){
+        return res.status(500).json({
+            success:false,
+            msg:e.message ||"Internal server error"
+        })
+    }
+})
+app.listen(3000, ()=>{
+    console.log("running on port 3000");
+})
