@@ -3,7 +3,7 @@ import cron from 'node-cron';
 import axios from "axios";
 
 import { Token } from "./types/token";
-import redis from "./redis";
+import RedisService from "./redis";
 
 
 const app=express();
@@ -34,7 +34,7 @@ async function fetchDataWithRetry(url: string){
             if(attempt >= max_attempt) {
                 return null
             }
-            const time = 1000 * (2 ** attempt-1);
+            const time = 1000 * (2 ** (attempt-1));
             await sleep(time);
         } 
     }
@@ -91,6 +91,7 @@ function normaliseGecko(geckoData:any[]):Token[]{
     })  
 }
 
+const redis= RedisService.getInstance();
 cron.schedule('*/30 * * * * *',async()=>{
     try{
         const [dex, jupiter, gecko] = await Promise.allSettled ([
@@ -119,16 +120,18 @@ cron.schedule('*/30 * * * * *',async()=>{
             normaliseGeckoData=normaliseGecko(geckoData);
         }
         
+
         normaliseDexData.forEach((token)=>{
             storage[token.address]=token;
         })
 
+
         normaliseJupiterData.forEach((token)=>{
             if(storage[token.address]){
-                const exsisting=storage[token.address]
-                if(exsisting){
-                    if(exsisting.volume24h=== null && token.volume24h != null){
-                        exsisting.volume24h=token.volume24h
+                const existing=storage[token.address]
+                if(existing){
+                    if(existing.volume24h=== null && token.volume24h != null){
+                        existing.volume24h=token.volume24h
                     }
                 }
             }else {
@@ -156,6 +159,7 @@ cron.schedule('*/30 * * * * *',async()=>{
             
         })
         latestToken=finalToken;
+        await redis.setTokens(finalToken);
         console.log(finalToken);
 
     }catch(err:any){
@@ -173,6 +177,11 @@ app.get("/tokens",async  (req:Request ,res:Response)=>{
         if( isNaN(ParsedLimit) || ParsedLimit <=0  ){
             ParsedLimit= 20;
         }
+
+        if(ParsedLimit >50){
+            ParsedLimit=50;
+        }
+        
 
         let raw_cursor= req.query.cursor as string || undefined;
         if(raw_cursor === undefined){
@@ -238,12 +247,6 @@ app.get("/tokens",async  (req:Request ,res:Response)=>{
             })
         }
 
-        
-
-        if(ParsedLimit >50){
-            ParsedLimit=50;
-        }
-        
         let limitedArray= sortedField.slice(cursor, cursor+ParsedLimit);
         let nextCursor:number | null  = cursor + ParsedLimit ;
         if(nextCursor >= sortedField.length){
@@ -258,7 +261,7 @@ app.get("/tokens",async  (req:Request ,res:Response)=>{
             nextCursor:nextCursor,
             data:limitedArray
         }
-        await redis.set(cacheKey, JSON.stringify(response), "EX", 30);
+        await redis.set(cacheKey, JSON.stringify(response), 30);
         return res.status(200).json(response)
 
     }catch(e:any){
