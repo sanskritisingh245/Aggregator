@@ -5,6 +5,7 @@ import { Token } from "./types/token";
 import RedisService from "./redis";
 import { broadcast } from "./ws/clientManger";
 import { getFinalTokens } from "./Services/tokenService";
+import "./ws/socket";
 
 const app=express();
 app.use(express.json());
@@ -103,7 +104,7 @@ app.get("/tokens",async  (req:Request ,res:Response)=>{
         })
 
         if(cursor >= sortedField.length){
-            return res.send({
+            return res.status(200).json({
                 success:true,
                 count:0,
                 data:[],

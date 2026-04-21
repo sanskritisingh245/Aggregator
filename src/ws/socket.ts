@@ -1,4 +1,3 @@
-import { log } from "node:console";
 import { WebSocketServer  } from "ws";
 import { addClient, removeClient } from "./clientManger";
 
