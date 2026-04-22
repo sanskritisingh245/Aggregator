@@ -3,9 +3,9 @@ import cron from 'node-cron';
 
 import { Token } from "./types/token";
 import RedisService from "./redis";
-import { broadcast } from "./ws/clientManger";
+import { addClient, broadcast, removeClient } from "./ws/clientManger";
 import { getFinalTokens } from "./Services/tokenService";
-import "./ws/socket";
+import { WebSocketServer } from "ws";
 
 const app=express();
 app.use(express.json());
@@ -136,6 +136,22 @@ app.get("/tokens",async  (req:Request ,res:Response)=>{
         })
     }
 })
+
+const wss= new WebSocketServer({port:8080});
+
+
+wss.on("connection",(ws)=>{
+    console.log("Client connected");
+
+    addClient(ws);
+
+    ws.on("close" , ()=>{
+        removeClient(ws);
+        console.log("Client disconnected")
+    });
+});
+
+
 app.listen(3000, ()=>{
     console.log("running on port 3000");
 })

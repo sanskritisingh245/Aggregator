@@ -1,4 +1,4 @@
-import { WebSocket } from "ws";
+import { WebSocket, WebSocketServer } from "ws";
 
 let clients:WebSocket[]=[];
 
@@ -21,3 +21,4 @@ export function broadcast(data:any){
         }
     });
 }
+
