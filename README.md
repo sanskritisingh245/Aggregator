@@ -2,10 +2,6 @@
 
 > A real-time Solana token aggregator. Pulls live market data from DexScreener, Jupiter, and CoinGecko, merges and de-duplicates by token address, caches in Redis, and streams updates to the browser over WebSockets.
 
-![status](https://img.shields.io/badge/status-active-brightgreen)
-![stack](https://img.shields.io/badge/stack-TS%20%7C%20Express%20%7C%20React%20%7C%20Vite%20%7C%20Redis-blue)
-![license](https://img.shields.io/badge/license-ISC-lightgrey)
-
 ---
 
 ## Why
