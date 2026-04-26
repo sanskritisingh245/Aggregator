@@ -174,14 +174,3 @@ interface Token {
 
 Any numeric field may be `null` if no upstream source provided it. The frontend pushes nulls to the bottom when sorting.
 
-## Roadmap
-
-- [ ] Persist historical snapshots for sparkline charts
-- [ ] Add server-side filtering (min liquidity, source whitelist)
-- [ ] Replace polling cron with upstream WebSocket subscriptions where available
-- [ ] Dockerfile + docker-compose for one-command local boot
-- [ ] Auth + rate limiting on the public REST endpoint
-
-## License
-
-ISC
