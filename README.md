@@ -4,6 +4,15 @@
 
 ---
 
+
+
+
+
+
+
+
+
+
 ## Why
 
 Token data is fragmented. DexScreener has DEX trades, Jupiter has Solana liquidity, CoinGecko has market caps and 24h price change — but none of them have everything in one place. This project unifies all three behind a single normalised schema, a single REST endpoint, and a single live WebSocket feed.
