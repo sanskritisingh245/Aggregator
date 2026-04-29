@@ -1,6 +1,6 @@
 import type { SortKey, SortOrder, TokensResponse } from "./types";
 
-const API_BASE = "/api";
+const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
 
 export async function fetchTokens(params: {
   sortBy: SortKey;

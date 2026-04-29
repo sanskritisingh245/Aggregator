@@ -1,5 +1,7 @@
 import express , {type Request  , type Response} from "express";
 import cron from 'node-cron';
+import http from "http";
+import cors from "cors";
 
 import { Token } from "./types/token";
 import RedisService from "./redis";
@@ -8,6 +10,7 @@ import { getFinalTokens } from "./Services/tokenService";
 import { WebSocketServer } from "ws";
 
 const app=express();
+app.use(cors({ origin: process.env.FRONTEND_ORIGIN ?? true }));
 app.use(express.json());
 
 let  latestToken:Token[] =[];
@@ -137,8 +140,8 @@ app.get("/tokens",async  (req:Request ,res:Response)=>{
     }
 })
 
-const wss= new WebSocketServer({port:8080});
-
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
 
 wss.on("connection",(ws)=>{
     console.log("Client connected");
@@ -151,7 +154,7 @@ wss.on("connection",(ws)=>{
     });
 });
 
-
-app.listen(3000, ()=>{
-    console.log("running on port 3000");
-})
+const PORT = Number(process.env.PORT) || 3000;
+server.listen(PORT, () => {
+    console.log(`running on port ${PORT}`);
+});

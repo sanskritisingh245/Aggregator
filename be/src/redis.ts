@@ -6,10 +6,10 @@ class RedisService{
     private client:Redis;
 
     private constructor(){
-        this.client=new Redis({
-            host: "127.0.0.1",
-            port:6379,
-        });
+        const url = process.env.REDIS_URL;
+        this.client = url
+            ? new Redis(url)
+            : new Redis({ host: "127.0.0.1", port: 6379 });
         console.log("redis connected once")
     }
 

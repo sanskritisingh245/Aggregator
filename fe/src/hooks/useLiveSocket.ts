@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Token, WSMessage } from "../lib/types";
 
-const WS_URL = "ws://localhost:8080";
+const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:3000";
 
 export type ConnectionState = "connecting" | "open" | "closed";
 
