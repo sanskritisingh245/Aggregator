@@ -1,11 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Liveline } from "liveline";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LivelinePoint } from "liveline";
 import { fetchTokens } from "./lib/api";
 import type { Token, TokenSource } from "./lib/types";
 import type { ConnectionState } from "./hooks/useLiveSocket";
 import { useLiveSocket } from "./hooks/useLiveSocket";
 import { formatPct, formatUsd, shortAddress } from "./lib/format";
+
+const Liveline = lazy(() => import("liveline").then((m) => ({ default: m.Liveline })));
+
+// Liveline redraws its canvas every frame; phones get the static SVG sparkline instead.
+// ponytail: checked once at load, phones don't resize into desktops
+const IS_WIDE = window.matchMedia("(min-width: 768px)").matches;
 
 const BOOTSTRAP_LIMIT = 50;
 
@@ -18,7 +23,7 @@ function App() {
   const [allKnown, setAllKnown] = useState<Token[]>([]);
   const [, setLoading] = useState(true);
   const [, setError] = useState<string | null>(null);
-  const [cursor, setCursor] = useState(0);
+  const [rawCursor, setCursor] = useState(0);
   const [pageSize, setPageSize] = useState<number>(DEFAULT_PAGE_SIZE);
   const [order, setOrder] = useState<SortOrder>("desc");
 
@@ -64,13 +69,9 @@ function App() {
     );
   }, [allKnown, order]);
 
-  // Snap cursor back if the dataset shrinks past the current page.
-  useEffect(() => {
-    if (sorted.length > 0 && cursor >= sorted.length) {
-      const last = Math.max(0, Math.floor((sorted.length - 1) / pageSize) * pageSize);
-      setCursor(last);
-    }
-  }, [sorted.length, cursor, pageSize]);
+  // Snap back to the last page if the dataset shrinks past the current one.
+  const lastPageStart = Math.max(0, Math.floor((sorted.length - 1) / pageSize) * pageSize);
+  const cursor = Math.min(rawCursor, lastPageStart);
 
   const visibleTokens = sorted.slice(cursor, cursor + pageSize);
   const hasPrev = cursor > 0;
@@ -116,10 +117,10 @@ function App() {
 
   return (
     <div className="min-h-screen bg-bg">
-      <div className="mx-auto max-w-[1240px] px-5 py-8 sm:px-8 sm:py-10">
+      <div className="mx-auto max-w-[1240px] px-4 py-6 sm:px-8 sm:py-10">
         <Header status={status} lastTickAt={lastTickAt} totalKnown={allKnown.length} />
 
-        <section className="mt-8 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-8 grid grid-cols-2 gap-3 xl:grid-cols-4">
           {(sorted.length === 0 ? Array.from({ length: 4 }) : sorted.slice(0, 4)).map(
             (token, i) => (
               <HighlightCard key={i} token={token as Token | undefined} rank={i + 1} />
@@ -129,7 +130,7 @@ function App() {
 
         <section className="mt-6 grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <div className="min-w-0 space-y-6">
-            <TrendCard token={sorted[0]} />
+            <TrendCard token={sorted[0]} asOf={lastTickAt} />
             <MarketTable
               tokens={visibleTokens}
               cursor={cursor}
@@ -220,7 +221,7 @@ function Header({
 function HighlightCard({ token, rank }: { token?: Token; rank: number }) {
   if (!token) {
     return (
-      <div className="card p-5">
+      <div className="card p-4 sm:p-5">
         <div className="flex items-center justify-between">
           <div className="h-4 w-12 shimmer" />
           <div className="h-3 w-10 shimmer" />
@@ -237,9 +238,9 @@ function HighlightCard({ token, rank }: { token?: Token; rank: number }) {
 
   return (
     <div className="card overflow-hidden">
-      <div className="px-5 pt-5">
+      <div className="px-4 pt-4 sm:px-5 sm:pt-5">
         <div className="flex items-start justify-between gap-2">
-          <span className="font-display text-[28px] font-bold tabular-nums tracking-tight text-ink">
+          <span className="font-display text-[22px] font-bold sm:text-[28px] tabular-nums tracking-tight text-ink">
             {String(rank).padStart(2, "0")}
           </span>
           <SourceTag source={token.source} />
@@ -260,8 +261,8 @@ function HighlightCard({ token, rank }: { token?: Token; rank: number }) {
           {token.address ? shortAddress(token.address, 4, 4) : "no address"}
         </div>
 
-        <div className="mt-4 flex items-baseline justify-between gap-2">
-          <span className="font-display text-[20px] font-bold tabular-nums tracking-tight text-ink">
+        <div className="mt-4 flex flex-wrap items-baseline justify-between gap-2">
+          <span className="font-display text-[17px] sm:text-[20px] font-bold tabular-nums tracking-tight text-ink">
             {formatUsd(token.price)}
           </span>
           {hasChange ? (
@@ -295,7 +296,7 @@ function HighlightCard({ token, rank }: { token?: Token; rank: number }) {
 
 /* ─── Trend card (replaces "Portfolio Balance") ─────────── */
 
-function TrendCard({ token }: { token?: Token }) {
+function TrendCard({ token, asOf }: { token?: Token; asOf: number | null }) {
   if (!token) {
     return (
       <div className="card p-6">
@@ -312,7 +313,7 @@ function TrendCard({ token }: { token?: Token }) {
   const seedKey = token.address ?? `${token.symbol}-${token.source}`;
 
   return (
-    <section className="card p-7">
+    <section className="card p-5 sm:p-7">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-wider text-ink-mute">
           <span className="h-px w-6 bg-accent" />
@@ -323,7 +324,7 @@ function TrendCard({ token }: { token?: Token }) {
 
       <div className="mt-4 flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <h3 className="serif-italic text-[44px] font-medium leading-[0.95] tracking-tight text-ink">
+          <h3 className="serif-italic text-[32px] sm:text-[44px] font-medium leading-[0.95] tracking-tight text-ink">
             {token.name}
           </h3>
           <div className="mt-1.5 flex items-center gap-2 font-mono text-[12px] tabular-nums text-ink-mute">
@@ -340,7 +341,7 @@ function TrendCard({ token }: { token?: Token }) {
         </div>
 
         <div className="text-right">
-          <div className="serif tabular-nums text-[40px] font-medium leading-none tracking-[-0.02em] text-ink">
+          <div className="serif tabular-nums text-[30px] sm:text-[40px] font-medium leading-none tracking-[-0.02em] text-ink">
             {formatUsd(token.price)}
           </div>
           {hasChange && (
@@ -350,7 +351,6 @@ function TrendCard({ token }: { token?: Token }) {
               }`}
             >
               <Arrow up={up} />
-              {up ? "+" : ""}
               {formatPct(change)}
               <span className="ml-1 text-[10px] font-medium opacity-70">24h</span>
             </div>
@@ -358,8 +358,20 @@ function TrendCard({ token }: { token?: Token }) {
         </div>
       </div>
 
-      <div className="mt-7" style={{ height: 240 }}>
-        <TrendChart seedKey={seedKey} trend={token.priceChange24h} price={token.price} />
+      <div className="mt-5 h-[140px] sm:mt-7 md:h-[240px]">
+        {IS_WIDE ? (
+          <TrendChart seedKey={seedKey} trend={token.priceChange24h} price={token.price} asOf={asOf} />
+        ) : (
+          <MiniSpark
+            seedKey={seedKey}
+            trend={token.priceChange24h}
+            width={320}
+            height={140}
+            points={40}
+            withFill
+            tall
+          />
+        )}
       </div>
 
       <dl className="mt-6 grid grid-cols-2 gap-x-6 gap-y-4 border-t border-rule pt-5 sm:grid-cols-4">
@@ -385,22 +397,26 @@ function TrendChart({
   seedKey,
   trend,
   price,
+  asOf,
 }: {
   seedKey: string;
   trend: number | null;
   price: number | null;
+  asOf: number | null;
 }) {
   const basePrice = typeof price === "number" && price > 0 ? price : 1;
+  // Series ends at the last socket tick; mount time until the first one arrives.
+  const [mountedAt] = useState(() => Date.now());
+  const now = Math.floor((asOf ?? mountedAt) / 1000);
 
   const series = useMemo<LivelinePoint[]>(() => {
     const points = buildChartSeries(seedKey, trend, basePrice, 64);
-    const now = Math.floor(Date.now() / 1000);
     const stepSeconds = (24 * 60 * 60) / (points.length - 1);
     return points.map((p, i) => ({
       time: now - Math.round((points.length - 1 - i) * stepSeconds),
       value: p.v,
     }));
-  }, [seedKey, trend, basePrice]);
+  }, [seedKey, trend, basePrice, now]);
 
   const latestValue = series[series.length - 1]?.value ?? basePrice;
   const fmt = useCallback((v: number) => formatUsd(v), []);
@@ -410,6 +426,7 @@ function TrendChart({
   }
 
   return (
+    <Suspense fallback={<div className="h-full w-full shimmer" />}>
     <Liveline
       data={series}
       value={latestValue}
@@ -422,6 +439,7 @@ function TrendChart({
       fill
       lineWidth={2.2}
     />
+    </Suspense>
   );
 }
 
@@ -510,7 +528,7 @@ function MarketTable({
 
   return (
     <section id="market-table" className="card overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rule px-6 py-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-rule px-4 py-4 sm:px-6 sm:py-5">
         <div>
           <h2 className="serif-italic text-[26px] font-medium leading-none tracking-tight text-ink">
             The market
@@ -560,14 +578,14 @@ function MarketTable({
         <table className="min-w-full">
           <thead>
             <tr className="border-b border-rule text-left font-mono text-[10px] uppercase tracking-wider text-ink-mute">
-              <th className="px-6 py-3 font-medium">#</th>
-              <th className="px-6 py-3 font-medium">Token</th>
-              <th className="px-6 py-3 font-medium">Source</th>
-              <th className="px-6 py-3 text-right font-medium">Price</th>
-              <th className="px-6 py-3 text-right font-medium">24h</th>
-              <th className="px-6 py-3 text-right font-medium">Volume</th>
-              <th className="px-6 py-3 text-right font-medium">Liquidity</th>
-              <th className="px-6 py-3 text-right font-medium">Trend</th>
+              <th className="px-3 py-3 sm:px-6 font-medium">#</th>
+              <th className="px-3 py-3 sm:px-6 font-medium">Token</th>
+              <th className="hidden px-3 py-3 sm:px-6 font-medium md:table-cell">Source</th>
+              <th className="px-3 py-3 sm:px-6 text-right font-medium">Price</th>
+              <th className="px-3 py-3 sm:px-6 text-right font-medium">24h</th>
+              <th className="px-3 py-3 sm:px-6 text-right font-medium">Volume</th>
+              <th className="hidden px-3 py-3 sm:px-6 text-right font-medium md:table-cell">Liquidity</th>
+              <th className="hidden px-3 py-3 sm:px-6 text-right font-medium md:table-cell">Trend</th>
             </tr>
           </thead>
           <tbody>
@@ -577,28 +595,28 @@ function MarketTable({
                   key={`skel-${i}`}
                   className={i < 7 ? "border-b border-rule" : ""}
                 >
-                  <td className="px-6 py-3.5">
+                  <td className="px-3 py-3 sm:px-6 sm:py-3.5">
                     <div className="h-3 w-6 shimmer" />
                   </td>
-                  <td className="px-6 py-3.5">
+                  <td className="px-3 py-3 sm:px-6 sm:py-3.5">
                     <div className="h-3 w-32 shimmer" />
                   </td>
-                  <td className="px-6 py-3.5">
+                  <td className="hidden px-6 py-3.5 md:table-cell">
                     <div className="h-3 w-10 shimmer" />
                   </td>
-                  <td className="px-6 py-3.5">
+                  <td className="px-3 py-3 sm:px-6 sm:py-3.5">
                     <div className="ml-auto h-3 w-16 shimmer" />
                   </td>
-                  <td className="px-6 py-3.5">
+                  <td className="px-3 py-3 sm:px-6 sm:py-3.5">
                     <div className="ml-auto h-3 w-12 shimmer" />
                   </td>
-                  <td className="px-6 py-3.5">
+                  <td className="px-3 py-3 sm:px-6 sm:py-3.5">
                     <div className="ml-auto h-3 w-20 shimmer" />
                   </td>
-                  <td className="px-6 py-3.5">
+                  <td className="hidden px-6 py-3.5 md:table-cell">
                     <div className="ml-auto h-3 w-20 shimmer" />
                   </td>
-                  <td className="px-6 py-3.5">
+                  <td className="hidden px-6 py-3.5 md:table-cell">
                     <div className="ml-auto h-3 w-20 shimmer" />
                   </td>
                 </tr>
@@ -612,11 +630,11 @@ function MarketTable({
                   key={`${token.address}-${i}`}
                   className={`row-hover ${i < tokens.length - 1 ? "border-b border-rule" : ""}`}
                 >
-                  <td className="px-6 py-3.5 font-mono text-[12px] tabular-nums text-ink-mute">
+                  <td className="px-3 py-3 sm:px-6 sm:py-3.5 font-mono text-[12px] tabular-nums text-ink-mute">
                     {String(cursor + i + 1).padStart(2, "0")}
                   </td>
-                  <td className="px-6 py-3.5">
-                    <div className="flex items-baseline gap-2">
+                  <td className="px-3 py-3 sm:px-6 sm:py-3.5">
+                    <div className="flex max-w-[8.5rem] items-baseline gap-2 sm:max-w-none">
                       <span className="truncate font-semibold text-[14px] text-ink" title={token.name}>
                         {token.name}
                       </span>
@@ -628,13 +646,13 @@ function MarketTable({
                       {token.address ? shortAddress(token.address, 4, 4) : "no address"}
                     </div>
                   </td>
-                  <td className="px-6 py-3.5">
+                  <td className="hidden px-6 py-3.5 md:table-cell">
                     <SourceTag source={token.source} />
                   </td>
-                  <td className="px-6 py-3.5 text-right font-medium tabular-nums text-[13px] text-ink">
+                  <td className="px-3 py-3 sm:px-6 sm:py-3.5 text-right font-medium tabular-nums text-[13px] text-ink">
                     {formatUsd(token.price)}
                   </td>
-                  <td className="px-6 py-3.5 text-right">
+                  <td className="px-3 py-3 sm:px-6 sm:py-3.5 text-right">
                     {hasChange ? (
                       <span
                         className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums ${
@@ -648,13 +666,13 @@ function MarketTable({
                       <span className="text-[13px] text-ink-mute">—</span>
                     )}
                   </td>
-                  <td className="px-6 py-3.5 text-right tabular-nums text-[13px] text-ink-2">
+                  <td className="px-3 py-3 sm:px-6 sm:py-3.5 text-right tabular-nums text-[13px] text-ink-2">
                     {formatUsd(token.volume24h)}
                   </td>
-                  <td className="px-6 py-3.5 text-right tabular-nums text-[13px] text-ink-2">
+                  <td className="hidden px-6 py-3.5 text-right tabular-nums text-[13px] text-ink-2 md:table-cell">
                     {formatUsd(token.liquidity)}
                   </td>
-                  <td className="px-6 py-3.5">
+                  <td className="hidden px-6 py-3.5 md:table-cell">
                     <div className="flex justify-end">
                       <MiniSpark
                         seedKey={
@@ -674,7 +692,7 @@ function MarketTable({
         </table>
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-rule px-6 py-4">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-t border-rule px-4 py-4 sm:px-6">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[13px] text-ink-mute">
           <span className="tabular-nums">
             Page <span className="font-semibold text-ink">{page}</span> of{" "}
@@ -1083,6 +1101,7 @@ function MiniSpark({
         strokeLinecap="round"
         strokeLinejoin="round"
         className="spark-draw"
+        pathLength={width * 1.6}
         style={{ ["--len" as string]: width * 1.6 }}
       />
     </svg>

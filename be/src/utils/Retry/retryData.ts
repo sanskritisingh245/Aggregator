@@ -12,7 +12,7 @@ export async function fetchDataWithRetry(url: string){
     let attempt=0;
     while(attempt < max_attempt){
         try{
-            const response= await axios.get(url)
+            const response= await axios.get(url, { timeout: 10_000 })
             return response.data;
         }catch(err:any){
             attempt++;

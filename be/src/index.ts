@@ -17,9 +17,11 @@ let  latestToken:Token[] =[];
 
 const redis= RedisService.getInstance();
 
-cron.schedule('*/30 * * * * *',async()=>{
+async function refreshTokens(){
     try{ 
         const finalToken= await getFinalTokens();
+        // keep the last good snapshot if every upstream failed
+        if(finalToken.length === 0) return;
         latestToken=finalToken;
 
         broadcast({
@@ -28,12 +30,19 @@ cron.schedule('*/30 * * * * *',async()=>{
         });
 
         await redis.setTokens(finalToken);
-        console.log(finalToken);
+        console.log(`broadcast ${finalToken.length} tokens`);
 
     }catch(err:any){
         console.log(err.message)
     }
-})
+}
+
+// serve the last snapshot from Redis right away instead of [] until the first fetch
+redis.getTokens().then((cached)=>{
+    if(latestToken.length === 0) latestToken=cached;
+}).catch(()=>{});
+refreshTokens();
+cron.schedule('*/30 * * * * *', refreshTokens);
 
 app.get("/tokens",async  (req:Request ,res:Response)=>{
     try{
@@ -147,6 +156,10 @@ wss.on("connection",(ws)=>{
     console.log("Client connected");
 
     addClient(ws);
+    // send the current snapshot now; otherwise the client waits for the next 30s tick
+    if(latestToken.length > 0){
+        ws.send(JSON.stringify({ type:"TOKEN_UPDATE", data:latestToken }));
+    }
 
     ws.on("close" , ()=>{
         removeClient(ws);

@@ -2,6 +2,13 @@
 
 > A real-time Solana token aggregator. Pulls live market data from DexScreener, Jupiter, and CoinGecko, merges and de-duplicates by token address, caches in Redis, and streams updates to the browser over WebSockets.
 
+## Demo
+
+<!-- Replace the line below with the user-attachments URL GitHub gives you
+     after drag-and-dropping aggregator.mov into the README editor. -->
+
+https://github.com/user-attachments/assets/REPLACE_ME
+
 ---
 
 

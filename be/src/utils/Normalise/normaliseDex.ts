@@ -7,7 +7,7 @@ export function normaliseDex(dexData: { pairs: any[] }):Token[]{
             address:pair.baseToken.address,
             name:pair.baseToken.name,
             symbol:pair.baseToken.symbol,
-            price:pair.priceUsd || null,
+            price:pair.priceUsd ? Number(pair.priceUsd) : null,
             volume24h:pair.volume?.h24 || null,
             marketCap:null,
             priceChange24h:null,
