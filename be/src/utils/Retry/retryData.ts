@@ -16,6 +16,7 @@ export async function fetchDataWithRetry(url: string){
             return response.data;
         }catch(err:any){
             attempt++;
+            console.log(`fetch failed (${attempt}/${max_attempt}) ${url}: ${err.response?.status ?? err.message}`);
             if(err.response){
                 if(err.response.status >= 400 &&  err.response.status <500 ){
                    return null 

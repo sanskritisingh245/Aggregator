@@ -19,19 +19,6 @@ class RedisService{
         }
         return RedisService.instance;
     }
-    //pagination
-    async set(key:string , value:string, ttl?: number){
-        if(ttl){
-            await this.client.set(key, value, "EX", ttl)
-        }else{
-            await this.client.set(key, value);
-        }
-    }
-
-    async get(key:string){
-        return await this.client.get(key)
-    }
-
     //tokenStorage
 
     async setTokens(token:any[]){

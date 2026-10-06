@@ -44,7 +44,7 @@ redis.getTokens().then((cached)=>{
 refreshTokens();
 cron.schedule('*/30 * * * * *', refreshTokens);
 
-app.get("/tokens",async  (req:Request ,res:Response)=>{
+app.get("/tokens",(req:Request ,res:Response)=>{
     try{
         let  limit=req.query.limit as string || undefined;
         if(limit === undefined){
@@ -87,12 +87,6 @@ app.get("/tokens",async  (req:Request ,res:Response)=>{
             sort_By="volume"
         }
         
-        let cacheKey=`tokens:sort=${sort_By}:order=${order}:cursor=${cursor}:limit=${ParsedLimit}`;
-        const cachedData= await redis.get(cacheKey);
-        if(cachedData){
-            return res.status(200).json(JSON.parse(cachedData))
-        }
-
         let sortField=mapData[sort_By] as keyof Token;
         let sortToken=[...latestToken]
         sortedField=sortToken.sort((tokenA, tokenB)=>{
@@ -138,7 +132,6 @@ app.get("/tokens",async  (req:Request ,res:Response)=>{
             nextCursor:nextCursor,
             data:limitedArray
         }
-        await redis.set(cacheKey, JSON.stringify(response), 30);
         return res.status(200).json(response)
 
     }catch(e:any){

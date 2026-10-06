@@ -29,9 +29,9 @@ Token data is fragmented. DexScreener has DEX trades, Jupiter has Solana liquidi
 - **Multi-source aggregation** — DexScreener, Jupiter, and CoinGecko fetched in parallel, merged by address.
 - **Gap-filling** — fields missing from one source (e.g. `marketCap`, `priceChange24h`) are backfilled from another.
 - **Live updates** — broadcasts a fresh snapshot to all WebSocket clients every 30 seconds.
-- **REST with sort + pagination** — `GET /tokens?sortBy=&order=&cursor=&limit=`, results cached in Redis for 30s.
+- **REST with sort + pagination** — `GET /tokens?sortBy=&order=&cursor=&limit=`, served straight from the in-memory snapshot.
 - **Resilient fetches** — each upstream call goes through a retry helper; one source failing does not break the others (`Promise.allSettled`).
-- **Singleton Redis client** — used both for the latest snapshot and for per-query response caching.
+- **Singleton Redis client** — persists the latest snapshot so a restarted server serves data immediately.
 - **React + Tailwind dashboard** — sortable ledger, top-movers rail, and a "RaceTrack" visualisation, all driven by the live socket.
 
 ## Architecture
@@ -160,7 +160,7 @@ Returns a sorted, paginated slice of the latest aggregated tokens.
 }
 ```
 
-`nextCursor` is `null` once the end of the list is reached. Each unique query is cached in Redis for 30s.
+`nextCursor` is `null` once the end of the list is reached.
 
 ### WebSocket — `ws://localhost:8080`
 
